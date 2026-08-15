@@ -47,10 +47,7 @@
     color: var(--accent);
   }
   h1::before { content: "$ "; color: var(--muted); }
-  .repo-tag {
-    color: var(--muted);
-    font-size: 12px;
-  }
+  .repo-tag { color: var(--muted); font-size: 12px; }
   .status {
     margin: 16px 0 28px;
     font-size: 12px;
@@ -76,15 +73,6 @@
     cursor: pointer;
   }
   button.refresh:hover { border-color: var(--accent); color: var(--accent); }
-
-  .section-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    margin: 32px 0 10px;
-  }
-
   .item {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -98,16 +86,8 @@
     justify-content: space-between;
     gap: 12px;
   }
-  .fname {
-    color: var(--text);
-    word-break: break-all;
-    font-size: 13.5px;
-  }
-  .fmeta {
-    color: var(--muted);
-    font-size: 11px;
-    margin-top: 2px;
-  }
+  .fname { color: var(--text); word-break: break-all; font-size: 13.5px; }
+  .fmeta { color: var(--muted); font-size: 11px; margin-top: 2px; }
   a.dl, button.copy {
     flex-shrink: 0;
     background: var(--accent-dim);
@@ -122,7 +102,6 @@
   }
   a.dl:hover, button.copy:hover { border-color: var(--accent); }
   button.copy.copied { background: var(--accent); color: #0f1115; }
-
   pre.code-body {
     margin: 12px 0 0;
     padding: 12px;
@@ -137,14 +116,8 @@
     max-height: 260px;
     overflow-y: auto;
   }
-
-  .empty, .error {
-    color: var(--muted);
-    font-size: 13px;
-    padding: 20px 0;
-  }
+  .empty, .error { color: var(--muted); font-size: 13px; padding: 20px 0; }
   .error { color: var(--danger); }
-
   footer {
     margin-top: 60px;
     padding-top: 16px;
@@ -152,23 +125,19 @@
     color: var(--muted);
     font-size: 11px;
   }
-  footer code {
-    background: var(--panel);
-    padding: 1px 5px;
-    border-radius: 3px;
-  }
+  footer code { background: var(--panel); padding: 1px 5px; border-radius: 3px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>drop</h1>
-    <span class="repo-tag" id="repoTag">loading…</span>
+    <span class="repo-tag">manifest-based</span>
   </header>
 
   <div class="status">
     <span class="dot"></span>
-    <span id="statusText">checking repo…</span>
+    <span id="statusText">loading manifest…</span>
     <button class="refresh" id="refreshBtn">refresh</button>
   </div>
 
@@ -177,25 +146,17 @@
   </div>
 
   <footer>
-    edit <code>OWNER</code> / <code>REPO</code> / <code>BRANCH</code> / <code>PATH</code> at the top of the script in this file to point it at your repo.
-    text files (.txt .md .json .yaml .yml .csv .log) render inline with a copy button — everything else gets a download link.
+    files live in <code>/drop</code>. every push rebuilds <code>manifest.json</code> automatically via
+    GitHub Actions — no calls to api.github.com are made from this page, only static files served by Pages.
+    upload from your phone, wait ~20–40s for the Action to finish, then hit refresh.
   </footer>
 </div>
 
 <script>
-  // ---- CONFIGURE THIS ----
-  const OWNER  = "fernando-sant";
-  const REPO   = "quick-drop";
-  const BRANCH = "main";
-  const PATH   = "";   // e.g. "drop" if you keep files in a /drop subfolder, else ""
-  // -------------------------
-
   const TEXT_EXT = ["txt","md","json","yaml","yml","csv","log","conf","ini"];
 
   const contentEl = document.getElementById("content");
   const statusEl = document.getElementById("statusText");
-  const repoTagEl = document.getElementById("repoTag");
-  repoTagEl.textContent = `${OWNER}/${REPO}${PATH ? "/" + PATH : ""}`;
 
   function ext(name) {
     const parts = name.split(".");
@@ -225,38 +186,36 @@
     setTimeout(() => { btn.textContent = original; btn.classList.remove("copied"); }, 1200);
   }
 
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   async function load() {
-    statusEl.textContent = "checking repo…";
+    statusEl.textContent = "loading manifest…";
     contentEl.innerHTML = '<div class="empty">loading…</div>';
-    const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}?ref=${BRANCH}`;
 
     try {
-      const res = await fetch(apiUrl, { headers: { "Accept": "application/vnd.github+json" } });
-      if (!res.ok) {
-        if (res.status === 404) throw new Error("repo or path not found — check OWNER/REPO/PATH in the script");
-        if (res.status === 403) throw new Error("rate limited by GitHub API — wait a bit and refresh");
-        throw new Error(`GitHub API error (${res.status})`);
-      }
-      const items = await res.json();
-      const files = Array.isArray(items) ? items.filter(i => i.type === "file") : [];
+      // relative fetch — same origin as this page, no api.github.com involved
+      const res = await fetch("manifest.json", { cache: "no-store" });
+      if (!res.ok) throw new Error(`manifest.json not found (${res.status}) — has the Action run yet?`);
+      const files = await res.json();
 
-      if (files.length === 0) {
+      if (!files.length) {
         statusEl.textContent = "connected — no files yet";
-        contentEl.innerHTML = '<div class="empty">nothing dropped yet. add a file to the repo from your phone and hit refresh.</div>';
+        contentEl.innerHTML = '<div class="empty">nothing dropped yet. upload a file to /drop from your phone, wait for the Action to finish, then refresh.</div>';
         return;
       }
 
-      files.sort((a, b) => a.name.localeCompare(b.name));
       statusEl.textContent = `connected — ${files.length} file${files.length === 1 ? "" : "s"}`;
 
       const blocks = await Promise.all(files.map(async (f) => {
         const isText = TEXT_EXT.includes(ext(f.name));
-        const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${f.path}`;
+        const url = `drop/${encodeURIComponent(f.name)}`;
 
         if (isText && f.size < 200000) {
           let body = "";
           try {
-            const r = await fetch(rawUrl);
+            const r = await fetch(url, { cache: "no-store" });
             body = await r.text();
           } catch {
             body = "(could not load file content)";
@@ -281,7 +240,7 @@
                   <div class="fname">${escapeHtml(f.name)}</div>
                   <div class="fmeta">${fmtSize(f.size)}</div>
                 </div>
-                <a class="dl" href="${rawUrl}" download="${escapeHtml(f.name)}">download</a>
+                <a class="dl" href="${url}" download="${escapeHtml(f.name)}">download</a>
               </div>
             </div>`;
         }
@@ -300,13 +259,6 @@
       statusEl.textContent = "error";
       contentEl.innerHTML = `<div class="error">${escapeHtml(err.message)}</div>`;
     }
-  }
-
-  function escapeHtml(str) {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
   }
 
   document.getElementById("refreshBtn").addEventListener("click", load);
