@@ -1,0 +1,63 @@
+name: Build and deploy Pages
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/drop
+          cp index.html _site/
+          if [ -d drop ]; then cp -r drop/. _site/drop/ 2>/dev/null || true; fi
+
+      - name: Generate manifest.json
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          drop_dir = "drop"
+          files = []
+          if os.path.isdir(drop_dir):
+              for name in sorted(os.listdir(drop_dir)):
+                  path = os.path.join(drop_dir, name)
+                  if os.path.isfile(path):
+                      files.append({
+                          "name": name,
+                          "size": os.path.getsize(path)
+                      })
+
+          with open("_site/manifest.json", "w") as f:
+              json.dump(files, f, indent=2)
+          PYEOF
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
